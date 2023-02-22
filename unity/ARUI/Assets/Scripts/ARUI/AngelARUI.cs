@@ -1,49 +1,34 @@
 using DilmerGames.Core.Singletons;
-using System;
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-
-public enum UpdateType
-{
-    add=0,
-    change=1,
-    remove=2,
-}
-
-public enum msgCat
-{ //Basically the priority in which the notification should be treated.
-    N_CAT_DANGER = 0,
-    N_CAT_WARNING = 1,
-    N_CAT_CAUTION = 2,
-    N_CAT_NOTICE = 3,
-}
-
-public enum msgContext
-{
-    N_CONTEXT_TASK_ERROR = 0, //# There is some error the user performed in the task
-    N_CONTEXT_ENV_ATTENTION = 1, //# There is something in the environment this notification pertains to. Likely spatial in nature.
-    N_CONTEXT_USER_MODELING = 2 //# This notification is in regards to the user modeling (e.g. user frustration).
-}
-
 
 public class AngelARUI : Singleton<AngelARUI>
 {
-    private string[,] tasks;
-
     [HideInInspector]
     public Camera mainCamera;
 
+    [Tooltip("If true, ARUI debug messages are shown in the unity console and scene Logger (if available)")]
+    public bool showARUIDebugMessages = true;
+
+    [Tooltip("If true, the eye gaze target is shown")]
+    public bool showEyeGazeTarget = false;
+
+    [Tooltip("Set a custom Skip Notification Message. Can not be empty.")]
+    public string SkipNotificationMessage = "You are skipping the current task:";
+
+    [Tooltip("Turn textToSpeech on or off")]
+    public bool textToSpeechOn = false;
+
     private void Awake()
     {
+        //Get persistant reference to ar cam
         mainCamera = Camera.main;
-
-        //Instantiate database
-        GameObject registry = new GameObject("EntityManager").AddComponent<EntityManager>().gameObject;
-        registry.transform.parent = transform;
 
         //Instantiate audio manager
         new GameObject("AudioManager").AddComponent<AudioManager>();
+
+        GameObject eyeTarget = Instantiate(Resources.Load(StringResources.eyeTarget_path)) as GameObject;
+        FollowEyeTarget follow = eyeTarget.AddComponent<FollowEyeTarget>();
+        FollowEyeTarget.Instance.ShowDebugTarget(showEyeGazeTarget);
 
         //Instantiate orb
         GameObject orb = Instantiate(Resources.Load(StringResources.orb_path)) as GameObject;
@@ -53,67 +38,26 @@ public class AngelARUI : Singleton<AngelARUI>
         //Instantiate empty tasklist
         GameObject taskListPrefab = Instantiate(Resources.Load(StringResources.taskList_path)) as GameObject;
         taskListPrefab.AddComponent<TaskListManager>();
+
     }
 
+    #region Tasks
     /// <summary>
-    /// Update the entity database according to the given parameters
-    /// //STILL WORK IN PROGRESS
-    /// </summary>
-    /// <param name="id">unique identifier of the entity to be update/add/removed</param>
-    /// <param name="update">type of update</param>
-    /// <param name="position">the position in world space related to the entity</param>
-    /// <param name="label">text label of updated entity</param>
-    public void UpdateDatabase(string id, UpdateType update, Vector3 position, string label)
-    {
-        if (update.Equals(UpdateType.add)) {
-            AddObject(id, position, label);
-
-        } else if (update.Equals(UpdateType.remove)) {
-            //TODO
-        } else if (update.Equals(UpdateType.change)) {
-            //TODO
-        }
-    }
-
-    /// <summary>
-    /// Set the task list and set the current task id to the given value
+    /// Set the task list and set the current task id to 0 (the first task)
     /// </summary>
     /// <param name="tasks">2D array off tasks</param>
-    /// <param name="id">id of current task id</param>
-    public void SetTasks(string[,] tasks, int id)
+    public void SetTasks(string[,] tasks)
     {
-        this.tasks = tasks;
-        TaskListManager.Instance.InitTasklist(tasks);
-        SetCurrentTaskID(id);
+        TaskListManager.Instance.SetTasklist(tasks);
+        TaskListManager.Instance.SetCurrentTask(0, textToSpeechOn);
     }
 
     /// <summary>
     /// Set the current task the user has to do.
-    /// If taskID is < than 0, the entire task list is shown and every task is set as NOT done.
     /// If taskID is >= 0 and < the number of tasks, then the task with the given taskID is highlighted. 
-    /// If taskID is > than the number of tasks, the entire task list is set as DONE.
     /// </summary>
     /// <param name="taskID">index of the current task, in the task</param>
-    public void SetCurrentTaskID(int taskID)
-    {
-        if (tasks == null)
-        {
-            Debug.Log("Trying to set 'currentTaskID' : " + taskID + " failed. Tasklist was: " + tasks);
-            return;
-        }
-
-        TaskListManager.Instance.SetCurrentTask(taskID);
-
-        if (taskID < tasks.GetLength(0) && taskID >= 0)
-        {
-            Orb.Instance.SetMessage(tasks[taskID, 1]);
-            Debug.Log("Set current task ID to: " + taskID);
-        } else
-        {
-            Orb.Instance.SetMessage("");
-            Debug.Log("Set current task ID to end.");
-        }
-    }
+    public void SetCurrentTaskID(int taskID) => TaskListManager.Instance.SetCurrentTask(taskID, textToSpeechOn);
 
     /// <summary>
     /// Turn the task list on or off.
@@ -121,25 +65,53 @@ public class AngelARUI : Singleton<AngelARUI>
     public void SetTaskListActive(bool isActive) => TaskListManager.Instance.SetTaskListActive(isActive);
 
     /// <summary>
+    /// Set all tasks in the task list as done. The orb will show a "done" message
+    /// </summary>
+    public void SetAllTasksDone() => TaskListManager.Instance.SetAllTasksDone(textToSpeechOn);
+
+    /// <summary>
     /// Toggles the task list. If on, the task list is positioned in front of the user's current gaze.
     /// </summary>
     public void ToggleTasklist() => TaskListManager.Instance.ToggleTasklist();
 
-    /// <summary>
-    /// Create Entity that was added to the database.
-    /// </summary>
-    /// <param name="id">unique id of the entity</param>
-    /// <param name="worldPos">position in world space</param>
-    /// <param name="text">text label</param>
-    /// <returns>The reference to the created entity</returns>
-    private DetectedEntity AddObject(string id, Vector3 worldPos, string text)
-    {
-        DetectedEntity DetectedObj = EntityManager.Instance.AddDetectedEntity(text);
-        DetectedObj.transform.SetParent(EntityManager.Instance.transform);
-        DetectedObj.InitEntity(id, worldPos, text, true);
+    #endregion
 
-        Logger.Instance.LogInfo("Placed " + text + " at " + worldPos);
-        return DetectedObj;
+    #region Notifications
+    /// <summary>
+    /// If given paramter is true, the orb will show message to the user that the system detected an attempt to skip the current task. 
+    /// The message will disappear if "SetCurrentTaskID(..)" is called, or ShowSkipNotification(false)
+    /// </summary>
+    /// <param name="show">if true, the orb will show a skip notification, if false, the notification will disappear</param>
+    public void ShowSkipNotification(bool show)
+    {
+        if (TaskListManager.Instance.GetTaskCount() <= 0 || TaskListManager.Instance.IsDone()) return;
+
+        if (show)
+        {
+            if (SkipNotificationMessage==null || SkipNotificationMessage.Length==0)
+                SkipNotificationMessage = "You are skipping the current task:";
+
+            Orb.Instance.SetNotificationMessage(SkipNotificationMessage);
+        }
+        else
+            Orb.Instance.SetNotificationMessage("");
+    }
+
+    #endregion
+
+    /// <summary>
+    /// ********FOR DEBUGGING ONLY, prints ARUI logging messages
+    /// </summary>
+    /// <param name="message"></param>
+    /// <param name="showInLogger"></param>
+    public void LogDebugMessage(string message, bool showInLogger)
+    {
+        if (showARUIDebugMessages)
+        {
+            if (showInLogger && FindObjectOfType<Logger>() != null)
+                Logger.Instance.LogInfo("***ARUI: " + message);
+            Debug.Log("***ARUI: " + message);
+        }
     }
 
 }

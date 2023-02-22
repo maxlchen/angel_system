@@ -3,8 +3,9 @@
 Initial repo for PTG project.
 
 This repo contains:
-* Experimental Unity app (and companion research-mode plugin library) for
-  transmitting appropriate sensor data off of the HoloLens2 platform
+* Experimental Unity app (and companion [HL2SS] plugin) for
+  transmitting appropriate sensor data off of the HoloLens2 platform,
+  and for running the ANGEL ARUI.
 * ROS 2 system for receiving sensor data, processing analytics, and pushing 
   results out. 
 
@@ -21,8 +22,9 @@ Unity Hub - 3.0.0 - https://unity.com/unity-hub
 Unity - 2020.3.25f1 - https://unity3d.com/get-unity/download/archive  
 Visual Studio 2019 - 16.11.8 - https://visualstudio.microsoft.com/vs/older-downloads/  
 Mixed Reality Feature Tool - 1.02111-Preview - https://www.microsoft.com/en-us/download/details.aspx?id=102778  
-HoloLens 2 headset
-Anaconda/Miniconda - py3.9
+HoloLens 2 headset - OS version 20438.1432  
+Anaconda/Miniconda - py3.9  
+HL2SS plugin - 1.0.15 - https://github.com/jdibenes/hl2ss
 
 ## First time build/deploy instructions
 
@@ -63,8 +65,8 @@ See [Unity README.md](unity/README.md) for instructions on creating an applicati
 
 - Research mode must be enabled in the HoloLens headset (see "Enabling Research Mode" section here https://docs.microsoft.com/en-us/windows/mixed-reality/develop/advanced-concepts/research-mode).  
 - The first time you start your application on the HoloLens, you may have to allow camera/microphone access to the app. Click yes on the popups and then restart the application.
-- Assuming that only one ethernet connection is active at the time of running the experimental app.
-
+- Due to issues accessing the depth and PV camera simultaneously, the HoloLens OS version should be less than 20348.1501. Version 20348.1432 has been tested with the app and confirmed to work. See this [issue](https://github.com/microsoft/HoloLens2ForCV/issues/133) for more information. To install an older OS version on the HoloLens, follow the instructions [here](https://docs.microsoft.com/en-us/hololens/hololens-recovery#clean-reflash-the-device).
+- Although the short throw depth camera data provided by research mode is provided as UINT16 data, the max valid value is 4090 (values above 4090 signify an invalid reading from the camera). So, the true range of the short throw depth camera is [0, 4090].
 
 # ROS 2 System
 ROS 2 Foxy is utilized to support our system of streaming analytics and
@@ -73,8 +75,30 @@ report-back to the HoloLens2 platform.
 Workspace root: `./ros/`
 
 System requirements
+* ansible
 * docker
 * docker-compose
+
+Some files required from the `https://data.kitware.com` Girder service require
+authentication due to their protected nature.
+The environment variable `GIRDER_API_KEY` must be defined with a valid API key,
+otherwise an authentication token cannot be retrieved.
+
+## Provision Files
+External large files should be provisioned by running the ansible tool:
+
+    ansible-playbook -i ansible/hosts.yml ansible/provision_files.yml
+
+This may include large files for running the system, like ML model files, or
+other files required for building docker images.
+
+This provisioning may require additional configuration and variables set in
+your environment in order to satisfy some permissions:
+* `GIRDER_API_KEY` will need to be set in order to acquire protected files from
+  `data.kitware.com`.
+
+The configuration that controls what is staged and where is located
+in the `ansible/roles/provision-files/vars/main.yml` file.
 
 ## Docker-based Workflow
 **Intention**: Use containerization to standardize development and runtime
@@ -84,9 +108,9 @@ environment and practice.
   configurations.
 
 Docker functionality is located under the `./docker/` directory.
-* `ros2-base` provides a base environment that supports building and running
-  our workspace.
-* `ros2-workspace-build` provides a build of our workspace.
+* `workspace-base-dev` provides a base environment that supports building and
+  running our workspace.
+* `workspace-build` provides a build of our workspace.
 
 ### Building Docker Images
 Run `./angel-docker-build.sh`.
@@ -103,7 +127,7 @@ The definition of this service is found in the `docker/docker-compose.yml`
 configuration.
 
 This will mount the `./ros/` subtree on the host system into the
-`/angel_workspace/src` directory in the run container.
+`/angel_workspace/src/` directory in the run container.
 
 This "workspace" context additionally mounts build, install and log output
 directories to a spot on the host in order to:
@@ -114,6 +138,9 @@ Due to this, there will not be a build available upon first shell start-up.
 The script `/angel_workspace/workspace_build.sh` is available to run.
 This script is used during the image build process, so using this script
 ensures that the same build method is performed.
+
+Other directories and files are mounted into the container environment for
+development purposes and external file sharing.
 
 This shell will **_NOT_** have the local installation sourced in order to
 facilitate further safe build actions.
@@ -160,9 +187,6 @@ Anatomy of the call:
 5) `tmuxinator` command creates a new server session defined by the given
    config.
 
-As a rosetta stone, this example configuration is symmetric to the launch file
-version located at `ros/angel_debug/launch/online_debug_demo.py`.
-
 To stop the system after using the above command, we simply need to exit the
 tmux instance or kill the tmux session.
 This can be done by providing the tmux keyboard command `<Ctrl-B, D>`.
@@ -179,12 +203,45 @@ tmuxinator command:
 tmuxinator stop fragment_object_detection_debug
 ```
 
+## Configuring ROS nodes that utilize SMQTK-Core
+Some ROS nodes utilize the smqtk-core plugin system so specification of what
+algorithm is utilized is determined based on a configuration file.
+
+Configuration files are currently located in: `ros/angel_system_nodes/configs/`
+* `default_object_det_config.json`
+  * Determines the image object detection plugin used in the
+    `angel_system_nodes object_detector.py` node.
+* `default_activity_det_config.json`
+  * Determines the activity detection plugin used in the
+    `angel_system_nodes activity_detector.py` node.
+
+## Setting up the foot pedal for annotations
+The `annotation_event_monitor` ROS node uses the up and down arrow keys to
+generate `AnnotationEvent` messages. These messages can be used to determine
+when the beginning and end of an activity or error occur during a recording.
+
+To help with this process, a foot pedal can be used to map foot pedal presses
+to keyboard presses. For this system, we are using the [Infinity 3 USB foot pedal].
+
+To configure your Linux system to recognize foot pedal presses as keyboard
+presses, see this [guide].
+
+In the .hwdb file, make sure to map the keyboard presses to the up and down arrow keys.
+
 ## ANGEL System Python Package
 
 `angel_system/` contains the interfaces and implementations for the
 various components in the ANGEL system python package.
 
+### Running PTG evaluation
+See `angel_system/eval/README.md` for details.
+
 ## Lessons Learned
 ### `rosdep`
 References to the lists that rosdep uses to resolve names:
 /etc/ros/rosdep/sources.list.d/20-default.list
+
+
+[Infinity 3 USB foot pedal]: https://www.amazon.com/Infinity-Digital-Control-Computer-USB2/dp/B002MY6I7G?th=1
+[guide]: https://catswhisker.xyz/log/2018/8/27/use_vecinfinity_usb_foot_pedal_as_a_keyboard_under_linux/
+[hl2ss]: https://github.com/jdibenes/hl2ss

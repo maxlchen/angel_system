@@ -1,0 +1,71 @@
+---
+# DON'T SET YOUR GIRDER_API_KEY HERE. BECAUSE DUH.
+
+# Output staging directory options.
+# These directory paths are interpreted relative to the repository root.
+stage_dirs:
+  # Example
+  #example: some/directory
+  model_files: "model_files"
+
+basic_downloads:
+  # Example
+  #- dest: "{{ stage_dirs.example_target }}/filename.txt
+  #  url: "https://kitware.com"
+  #  sha256: 0000000000000000000000000000000000000000000000000000000000000000
+  []  # REMOVE WHEN ADDING LIST CONTENT
+
+# List of files from
+girder_file_downloads:
+  api_url: "https://data.kitware.com/api/v1"
+  by_file_id:
+    # Example
+    #- file_id: "111111111111111111111111"
+    #  sha512: "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    #  dest: "{{ stage_dirs.build_itt_base }}/some_file.txt"
+
+    # FasterRCNN label list text file
+    - file_id: 6332f54b11dab814282085e9
+      sha512: 2a635a859135f2360c0e02f58b9c9b78311ef07bb01cf6f5daac1c4ca92b827d7eeb5369362931e266c4b813ef472306803a4534d30c3f83712bea2b8d1cceb0
+      dest: "{{ stage_dirs.model_files }}/fasterrcnn_label_list.txt"
+    # FasterRCNN model weights checkpoint
+    - file_id: 6332f52a11dab814282085e6
+      sha512: 73529a1c238c20417bc6197035b4307a8afb3884ed24bc5938c92ca4d42e8f0531ae9582809da9512b198ad88d64113fd557692ac0933da24d7433983eb4f0ad
+      dest: "{{ stage_dirs.model_files }}/fasterrcnn_res101_vg.pth"
+    # UHO model weights checkpoint
+    - file_id: 633b095d11dab81428208933
+      sha512: 15aa06bcca0d775178adfbcda0426b983f72c14883b35b80e3114dba98e59840de2e54cf6620b0ddf96231ae378eed16ab1cb82b9a95545614543bec917ab81c
+      dest: "{{ stage_dirs.model_files }}/uho_epoch_090.ckpt"
+    # UHO model label list text file.
+    - file_id: 633c957011dab814282089ab
+      sha512: 293ef83fbd745ba4a5882ab8d476c1c87747050223dd13dd50139dd07425a50ff265a986ea37fc91180be759eee4cbf3ae4b7f11e3050586a8e5bf1db2513136
+      dest: "{{ stage_dirs.model_files }}/uho_epoch_090_labels.txt"
+    - file_id: 635c785711dab8142820abbb
+      sha512: 1d9d371b1c8b3377de27ac36de04c7a267c6ad5991ce9e6a19dca3f71af905a18c4510762155ca7c7ac4d85bc3959d6773871b5191372568333f4416b7b4c813
+      dest: "{{ stage_dirs.model_files }}/uho_checkpoint_20221022.ckpt"
+    # Task step HMM weights
+    - file_id: 6361524811dab8142820adff
+      sha512: 86f5ed4e01266c13f405f4048175d4a2b8d31c412a7170ee5ae6039062967e2b539c95f5ba16a61b893addec407648411d8a1b3ca62394e70f171fb8dd738bef
+      dest: "{{ stage_dirs.model_files }}/recipe_coffee_mean_std.npy"
+    - file_id: 63643e4e11dab8142820af0e
+      sha512: 5b9a42e3048c0f5360d7a7f9e11e677e51a2ae3318e60222ee07c0852e464e3572eb1bb5521aaccab38f8f3085609a2a06179e69e435f42dc1ba96d05a3d160a
+      dest: "{{ stage_dirs.model_files }}/recipe_coffee_trimmed_mean_std.npy"
+    - file_id: 63657f9c11dab8142820af6b
+      sha512: 78e9bf93fad284a6cf1ffe488b940ec8e807aed13f3bdb5a5c4b83bb649737765b4ac007359a8d68464318e5d624b226918272fe82e0ddb6f29852f4e18f50b0
+      dest: "{{ stage_dirs.model_files }}/recipe_coffee_trimmed_v2_mean_std.npy"
+    - file_id: 63657eb111dab8142820af68
+      sha512: 9a9f9aa836dc3eb6ba187b64bdd72bb0cdce062b086996921827270783b1686bdf079bfdb34eacd5c71cb28366e8e89a4303a71f9ce0d2c27628d78fae939ab3
+      dest: "{{ stage_dirs.model_files }}/recipe_coffee_trimmed_v3_mean_std.npy"
+
+# List of git repositories to check out at a specific ref and then archive.
+# Destination files will be written as GZipped TAR files, so please suffix
+# appropriately.
+# - checksums should be SHA256
+git_repositories:
+  # Example
+  #- name: unique_repo_name
+  #  repo: git@github.com:some_org/some_repo.git
+  #  ref: branch_name_or_tag_or_hash
+  #  dest: "{{ stage_dirs.example }}/safe_file_name.tar.gz"
+  #  checksum: 0000000000000000000000000000000000000000000000000000000000000000
+  []  # REMOVE WHEN ADDING LIST CONTENT

@@ -25,6 +25,8 @@ RUN apt-get -y update \
         ros-${ROS_DISTRO}-rmw-cyclonedds-cpp \
         ros-${ROS_DISTRO}-test-msgs \
         ros-${ROS_DISTRO}-pybind11-vendor \
+        # for demo-ui
+        ros-${ROS_DISTRO}-rosbridge-server \
         tmuxinator \
         # for python simpleaudio
         libasound2-dev \
@@ -38,6 +40,10 @@ RUN apt-get -y update \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
+# For the demo-ui
+RUN curl -sL https://deb.nodesource.com/setup_14.x | bash - 
+RUN apt-get install -y nodejs && node -v && npm -v
+
 # Env vars for the nvidia-container-runtime.
 ENV NVIDIA_VISIBLE_DEVICES all
 ENV NVIDIA_DRIVER_CAPABILITIES graphics,utility,compute
@@ -47,7 +53,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES graphics,utility,compute
 #       becomes to create a minimal image.
 ENV PATH=/root/.local/bin:${PATH}
 ENV POETRY_VERSION=1.1.13
-RUN pip3 install --user pip==22.0.3 \
+RUN pip3 install --user pip==23.0 \
  && (curl -sSL 'https://install.python-poetry.org' | python3 -) \
  && poetry config virtualenvs.create false
 
@@ -61,7 +67,11 @@ ENV ANGEL_WORKSPACE_DIR="${ANGEL_WORKSPACE_DIR}"
 #
 FROM base AS tmp_package_files
 COPY ./ros "${ANGEL_WORKSPACE_DIR}"/src
-RUN find "${ANGEL_WORKSPACE_DIR}"/src -type f \! -name "package.xml" -print | xargs rm
+RUN mkdir "${ANGEL_WORKSPACE_DIR}"/tmp \
+ && (find "${ANGEL_WORKSPACE_DIR}"/src -type f -name 'package.xml' -print | xargs -n1 -I{} cp --parents {} "${ANGEL_WORKSPACE_DIR}"/tmp) \
+ && rm -r "${ANGEL_WORKSPACE_DIR}"/src \
+ && mv "${ANGEL_WORKSPACE_DIR}"/tmp/"${ANGEL_WORKSPACE_DIR}"/src "${ANGEL_WORKSPACE_DIR}"/ \
+ && rm -r "${ANGEL_WORKSPACE_DIR}"/tmp
 
 #
 # Build our workspace
@@ -70,23 +80,21 @@ FROM base AS build
 
 # Bring in just package files from source tree for rosdep to use.
 COPY --from=tmp_package_files "${ANGEL_WORKSPACE_DIR}" "${ANGEL_WORKSPACE_DIR}"
+COPY docker/workspace_build_rosdep_install.sh "${ANGEL_WORKSPACE_DIR}/"
 RUN apt-get -y update \
- && rosdep install -i --from-path "${ANGEL_WORKSPACE_DIR}" --rosdistro ${ROS_DISTRO} -y \
+ && "${ANGEL_WORKSPACE_DIR}/workspace_build_rosdep_install.sh" \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
 # Install tracked python dependencies
-COPY poetry.lock pyproject.toml "${ANGEL_WORKSPACE_DIR}"/
+COPY poetry.lock pyproject.toml docker/workspace_build_pydep_install.sh "${ANGEL_WORKSPACE_DIR}"/
 RUN cd "${ANGEL_WORKSPACE_DIR}" \
-    # TODO: Re-enable use of hashes once editable/git deps are removed. \
-    #       - Remove `--without-hashes` option. \
-    # * Poetry extraneously finds matplotlib requiring setuptools-scm.
-    #   theoretically being "fixed" in matplotlib 3.6
- && poetry export --without-hashes --dev -f requirements.txt | \
-      pip3 install --no-deps --user -r /dev/stdin \
- && pip uninstall -y setuptools-scm
+ && "${ANGEL_WORKSPACE_DIR}/workspace_build_pydep_install.sh"
 
 # Build the angel_system python package
+# * This is intentionally separated from the above dep installation so as to
+#   not trigger re-installation of all dependencies if there is only a change
+#   in the library and not with the libraries dependencies.
 COPY ./angel_system "${ANGEL_WORKSPACE_DIR}"/angel_system
 RUN cd "${ANGEL_WORKSPACE_DIR}" \
  && pip install --no-deps --user -e .
@@ -95,8 +103,12 @@ RUN cd "${ANGEL_WORKSPACE_DIR}" \
 # TODO
 
 COPY ./ros "${ANGEL_WORKSPACE_DIR}/src"
-COPY docker/workspace_build.sh "${ANGEL_WORKSPACE_DIR}"/
-RUN "${ANGEL_WORKSPACE_DIR}/workspace_build.sh"
+COPY docker/workspace_build_ros.sh "${ANGEL_WORKSPACE_DIR}"/
+RUN "${ANGEL_WORKSPACE_DIR}/workspace_build_ros.sh"
+
+COPY docker/workspace_build_npm_install.sh "${ANGEL_WORKSPACE_DIR}"/
+RUN cd "${ANGEL_WORKSPACE_DIR}"/src/angel_utils/demo_ui/ \
+ && "${ANGEL_WORKSPACE_DIR}/workspace_build_npm_install.sh"
 
 # Bring in tmux run configurations
 # - add symlink to tmuxinator's expected "config home"
@@ -108,6 +120,7 @@ RUN ln -s "${ANGEL_WORKSPACE_DIR}"/tmux "${HOME}/.tmuxinator" \
 COPY docker/cyclonedds_profile.xml.tmpl \
      docker/workspace_entrypoint.sh \
      docker/workspace_setenv.sh \
+     docker/workspace_build.sh \
      "${ANGEL_WORKSPACE_DIR}"/
 
 WORKDIR "${ANGEL_WORKSPACE_DIR}"

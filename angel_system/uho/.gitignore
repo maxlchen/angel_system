@@ -1,0 +1,6 @@
+/.hydra/
+/checkpoints/
+/logs/
+/tensorboard/
+/train.log
+/train_ddp_process*.log

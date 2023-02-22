@@ -57,14 +57,24 @@ services:
       - ../ros:${ANGEL_WORKSPACE_DIR}/src
       - ../tmux:${ANGEL_WORKSPACE_DIR}/tmux
       - ../angel_system:${ANGEL_WORKSPACE_DIR}/angel_system
+      - ../model_files:${ANGEL_WORKSPACE_DIR}/model_files
+      - ../config:${ANGEL_WORKSPACE_DIR}/config
       - ./workspace_build.sh:${ANGEL_WORKSPACE_DIR}/workspace_build.sh
+      - ./workspace_build_npm_install.sh:${ANGEL_WORKSPACE_DIR}/workspace_build_npm_install.sh
+      - ./workspace_build_pydep_install.sh:${ANGEL_WORKSPACE_DIR}/workspace_build_pydep_install.sh
+      - ./workspace_build_ros.sh:${ANGEL_WORKSPACE_DIR}/workspace_build_ros.sh
+      - ./workspace_build_rosdep_install.sh:${ANGEL_WORKSPACE_DIR}/workspace_build_rosdep_install.sh
       - ./workspace_entrypoint.sh:${ANGEL_WORKSPACE_DIR}/workspace_entrypoint.sh
       - ./workspace_setenv.sh:${ANGEL_WORKSPACE_DIR}/workspace_setenv.sh
+      - ../ros_bags:${ANGEL_WORKSPACE_DIR}/ros_bags
+      - ../hl2ss:${ANGEL_WORKSPACE_DIR}/hl2ss
       # Build environment things
       - ${WORKSPACE_SHELL_HOST_DIR}/build:${ANGEL_WORKSPACE_DIR}/build
       - ${WORKSPACE_SHELL_HOST_DIR}/install:${ANGEL_WORKSPACE_DIR}/install
       - ${WORKSPACE_SHELL_HOST_DIR}/log:${ANGEL_WORKSPACE_DIR}/log
       - ${WORKSPACE_SHELL_HOST_DIR}/stuff:${ANGEL_WORKSPACE_DIR}/stuff
+      - ${WORKSPACE_SHELL_HOST_DIR}/ros_logs:/root/.ros/logs
+      - ${WORKSPACE_SHELL_HOST_DIR}/cache/torch:/root/.cache/torch
       # X11 things
       - /tmp/.X11-unix:/tmp/.X11-unix
       # assume this file exists, should be created before running.
@@ -75,6 +85,7 @@ services:
       SETUP_WORKSPACE_INSTALL:  # from .env file or parent environment
       DISPLAY:  # pull from current environment
       XAUTHORITY: /tmp/.docker.xauth
+      PYTHONDONTWRITEBYTECODE: 1  # Don't write .pyc files when in workspace
 
   workspace-shell-dev-gpu:
     extends:

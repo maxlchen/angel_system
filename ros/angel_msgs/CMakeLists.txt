@@ -24,6 +24,7 @@ find_package( vision_msgs REQUIRED )
 
 set( message_files
   msg/ActivityDetection.msg
+  msg/AnnotationEvent.msg
   msg/AruiObject3d.msg
   msg/AruiUpdate.msg
   msg/AruiUserNotification.msg
@@ -40,10 +41,12 @@ set( message_files
   msg/TaskItem.msg
   msg/TaskNode.msg
   msg/TaskUpdate.msg
+  msg/VisionBoundingBox3d.msg
   )
 set( service_files
   srv/QueryAllObjects3d.srv
   srv/QueryTaskGraph.srv
+  srv/QueryImageSize.srv
   )
 rosidl_generate_interfaces( ${PROJECT_NAME} ${message_files} ${service_files}
   DEPENDENCIES builtin_interfaces std_msgs geometry_msgs shape_msgs vision_msgs
