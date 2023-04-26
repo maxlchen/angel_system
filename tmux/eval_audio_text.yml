@@ -1,11 +1,11 @@
 #
-# Used to evaluate ASR and intent detection for a specified ROS bag of data with
-# upstream Voice Activity Detection (VAD)
+# Used to evaluate ASR, emotion  & intent detection for a specified ROS bag
+# of data with upstream Voice Activity Detection (VAD)
 # This configuration should be run by itself (e.g. not in combination with
 # another tmuxinator launch).
 #
 
-name: ASR Evaluation with VAD
+name: All audio and text nodes
 root: <%= ENV["ANGEL_WORKSPACE_DIR"] %>
 
 # Optional tmux socket
@@ -74,3 +74,8 @@ windows:
       -p utterances_topic:=utterances_topic
       -p expect_user_intent_topic:=expect_user_intent_topic
       -p interp_user_intent_topic:=interp_user_intent_topic
+  - emotion_detection: ros2 run angel_system_nodes emotion_detector --ros-args
+      -r __ns:=${ROS_NAMESPACE}
+      -p model_mode:=vader
+      -p utterances_topic:=utterances_topic
+      -p user_emotion_topic:=user_emotion_topic
