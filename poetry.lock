@@ -164,6 +164,17 @@ optional = false
 python-versions = ">=3.6"
 
 [[package]]
+name = "cffi"
+version = "1.15.1"
+description = "Foreign Function Interface for Python calling C code."
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.dependencies]
+pycparser = "*"
+
+[[package]]
 name = "chardet"
 version = "5.1.0"
 description = "Universal encoding detector for Python 3"
@@ -345,11 +356,11 @@ python-versions = ">=3.7"
 
 [[package]]
 name = "fsspec"
-version = "2023.1.0"
+version = "2023.4.0"
 description = "File-system specification"
 category = "main"
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.8"
 
 [package.dependencies]
 aiohttp = {version = "<4.0.0a0 || >4.0.0a0,<4.0.0a1 || >4.0.0a1", optional = true, markers = "extra == \"http\""}
@@ -360,8 +371,9 @@ abfs = ["adlfs"]
 adl = ["adlfs"]
 arrow = ["pyarrow (>=1)"]
 dask = ["dask", "distributed"]
+devel = ["pytest", "pytest-cov"]
 dropbox = ["dropboxdrivefs", "requests", "dropbox"]
-entrypoints = ["importlib-metadata"]
+full = ["adlfs", "aiohttp (!=4.0.0a0,!=4.0.0a1)", "dask", "distributed", "dropbox", "dropboxdrivefs", "fusepy", "gcsfs", "libarchive-c", "ocifs", "panel", "paramiko", "pyarrow (>=1)", "pygit2", "requests", "s3fs", "smbprotocol", "tqdm"]
 fuse = ["fusepy"]
 gcs = ["gcsfs"]
 git = ["pygit2"]
@@ -805,14 +817,6 @@ develop = ["pytest (>=4.6)", "pycodestyle", "pytest-cov", "codecov", "wheel"]
 tests = ["pytest (>=4.6)"]
 
 [[package]]
-name = "msgpack"
-version = "1.0.4"
-description = "MessagePack serializer"
-category = "main"
-optional = false
-python-versions = "*"
-
-[[package]]
 name = "multidict"
 version = "6.0.4"
 description = "multidict implementation"
@@ -842,6 +846,28 @@ developer = ["pre-commit (>=2.20)", "mypy (>=0.991)"]
 doc = ["sphinx (==5.2.3)", "pydata-sphinx-theme (>=0.11)", "sphinx-gallery (>=0.11)", "numpydoc (>=1.5)", "pillow (>=9.2)", "nb2plots (>=0.6)", "texext (>=0.6.7)"]
 extra = ["lxml (>=4.6)", "pygraphviz (>=1.10)", "pydot (>=1.4.2)", "sympy (>=1.10)"]
 test = ["pytest (>=7.2)", "pytest-cov (>=4.0)", "codecov (>=2.1)"]
+
+[[package]]
+name = "nltk"
+version = "3.8.1"
+description = "Natural Language Toolkit"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[package.dependencies]
+click = "*"
+joblib = "*"
+regex = ">=2021.8.3"
+tqdm = "*"
+
+[package.extras]
+all = ["scikit-learn", "python-crfsuite", "requests", "numpy", "pyparsing", "twython", "scipy", "matplotlib"]
+corenlp = ["requests"]
+machine_learning = ["numpy", "python-crfsuite", "scikit-learn", "scipy"]
+plot = ["matplotlib"]
+tgrep = ["pyparsing"]
+twitter = ["twython"]
 
 [[package]]
 name = "numpy"
@@ -1088,6 +1114,14 @@ prettyprint = ["lxml"]
 validation = ["lxml"]
 
 [[package]]
+name = "pycparser"
+version = "2.21"
+description = "C parser in Python"
+category = "main"
+optional = false
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
+
+[[package]]
 name = "pyglet"
 version = "1.5.27"
 description = "Cross-platform windowing and multimedia library"
@@ -1315,6 +1349,25 @@ description = "YAML parser and emitter for Python"
 category = "main"
 optional = false
 python-versions = ">=3.6"
+
+[[package]]
+name = "pyzmq"
+version = "25.0.0"
+description = "Python bindings for 0MQ"
+category = "main"
+optional = false
+python-versions = ">=3.6"
+
+[package.dependencies]
+cffi = {version = "*", markers = "implementation_name == \"pypy\""}
+
+[[package]]
+name = "regex"
+version = "2023.3.23"
+description = "Alternative regular expression module, to replace re."
+category = "main"
+optional = false
+python-versions = ">=3.8"
 
 [[package]]
 name = "requests"
@@ -1932,7 +1985,7 @@ test = ["pytest"]
 
 [[package]]
 name = "trimesh"
-version = "3.20.1"
+version = "3.21.5"
 description = "Import, export, process, analyze and view triangular meshes."
 category = "main"
 optional = false
@@ -1946,7 +1999,6 @@ jsonschema = {version = "*", optional = true, markers = "extra == \"all\""}
 lxml = {version = "*", optional = true, markers = "extra == \"all\""}
 mapbox-earcut = {version = "*", optional = true, markers = "extra == \"all\""}
 meshio = {version = "*", optional = true, markers = "extra == \"all\""}
-msgpack = {version = "*", optional = true, markers = "extra == \"all\""}
 networkx = {version = "*", optional = true, markers = "extra == \"all\""}
 numpy = "*"
 pillow = {version = "*", optional = true, markers = "extra == \"all\""}
@@ -1965,9 +2017,9 @@ xatlas = {version = "*", optional = true, markers = "extra == \"all\""}
 xxhash = {version = "*", optional = true, markers = "extra == \"all\""}
 
 [package.extras]
-all = ["pycollada", "meshio", "networkx", "chardet", "sympy", "python-fcl", "scipy", "shapely", "scikit-image", "psutil", "mapbox-earcut", "glooey", "pillow", "lxml", "jsonschema", "svg.path", "setuptools", "xxhash", "requests", "rtree", "msgpack", "colorlog", "xatlas", "pyglet (<2)"]
-easy = ["jsonschema", "colorlog", "svg.path", "setuptools", "xxhash", "requests", "networkx", "rtree", "sympy", "msgpack", "pycollada", "chardet", "scipy", "shapely", "mapbox-earcut", "pillow", "lxml"]
-test = ["ezdxf", "autopep8", "pytest-cov", "ruff", "pytest", "coveralls", "pyinstrument"]
+all = ["colorlog", "glooey", "pycollada", "xxhash", "svg.path", "scipy", "scikit-image", "pyglet (<2)", "rtree", "python-fcl", "sympy", "jsonschema", "setuptools", "psutil", "mapbox-earcut", "lxml", "pillow", "networkx", "shapely", "meshio", "xatlas", "chardet", "requests"]
+easy = ["rtree", "colorlog", "sympy", "jsonschema", "setuptools", "pycollada", "lxml", "mapbox-earcut", "xxhash", "pillow", "networkx", "shapely", "svg.path", "scipy", "chardet", "requests"]
+test = ["ruff", "pytest", "pytest-cov", "coveralls", "autopep8", "pyinstrument", "ezdxf"]
 
 [[package]]
 name = "typeguard"
@@ -2026,6 +2078,14 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "websockets"
+version = "11.0"
+description = "An implementation of the WebSocket Protocol (RFC 6455 & 7692)"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[[package]]
 name = "xatlas"
 version = "0.0.7"
 description = "Python bindings for xatlas"
@@ -2079,7 +2139,7 @@ testing = ["pytest (>=6)", "pytest-checkdocs (>=2.4)", "flake8 (<5)", "pytest-co
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.8,<3.10"
-content-hash = "cd2a048bb39923a1aba0782b8f7cdd07d62d59e2ed595e0dc710096823f5b2b3"
+content-hash = "1072e04b232df382e30646fac39e480b326f582376687c40a62947b5374a85c7"
 
 [metadata.files]
 aiohttp = []
@@ -2096,6 +2156,7 @@ babel = []
 backcall = []
 black = []
 certifi = []
+cffi = []
 chardet = []
 charset-normalizer = []
 click = []
@@ -2144,10 +2205,10 @@ mdurl = []
 meshio = []
 more-itertools = []
 mpmath = []
-msgpack = []
 multidict = []
 mypy-extensions = []
 networkx = []
+nltk = []
 numpy = []
 omegaconf = []
 opencv-python = []
@@ -2170,6 +2231,7 @@ pure-eval = []
 pyarrow = []
 pycocotools = []
 pycollada = []
+pycparser = []
 pyglet = []
 pygments = []
 pynput = []
@@ -2189,6 +2251,8 @@ pytz = []
 pywavelets = []
 pywin32 = []
 pyyaml = []
+pyzmq = []
+regex = []
 requests = []
 rich = []
 rtree = []
@@ -2239,6 +2303,7 @@ typing-extensions = []
 urllib3 = []
 vecrec = []
 wcwidth = []
+websockets = []
 xatlas = []
 xxhash = []
 yacs = []

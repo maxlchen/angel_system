@@ -21,6 +21,7 @@ from angel_msgs.msg import (
     HeadsetAudioData,
 )
 from angel_system.hl2ss_viewer import hl2ss
+from angel_utils import RateTracker
 from angel_utils.conversion import hl2ss_stamp_to_ros_time
 
 
@@ -166,6 +167,7 @@ class HL2SSROSBridge(Node):
         # Start the frame publishing thread
         self._pv_active = Event()
         self._pv_active.set()
+        self._pv_rate_tracker = RateTracker()
         self._pv_thread = Thread(
             target=self.pv_publisher,
             name="publish_pv"
@@ -175,6 +177,7 @@ class HL2SSROSBridge(Node):
         # Start the hand tracking data thread
         self._si_active = Event()
         self._si_active.set()
+        self._si_rate_tracker = RateTracker()
         self._si_thread = Thread(
             target=self.si_publisher,
             name="publish_si"
@@ -184,6 +187,7 @@ class HL2SSROSBridge(Node):
         # Start the audio data thread
         self._audio_active = Event()
         self._audio_active.set()
+        self._audio_rate_tracker = RateTracker()
         self._audio_thread = Thread(
             target=self.audio_publisher,
             name="publish_audio"
@@ -289,13 +293,18 @@ class HL2SSROSBridge(Node):
             data = self.hl2ss_pv_client.get_next_packet()
 
             try:
-                image_msg = BRIDGE.cv2_to_imgmsg(data.payload, encoding="bgr8")
+                image_msg = BRIDGE.cv2_to_imgmsg(data.payload.image, encoding="bgr8")
                 image_msg.header.stamp = hl2ss_stamp_to_ros_time(data.timestamp)
                 image_msg.header.frame_id = "PVFramesBGR"
             except TypeError as e:
                 self.get_logger().warning(f"{e}")
 
             self.ros_frame_publisher.publish(image_msg)
+
+            self._pv_rate_tracker.tick()
+            self.get_logger().debug(f"Published image message (hz: "
+                                    f"{self._pv_rate_tracker.get_rate_avg()})",
+                                    throttle_duration_sec=1)
 
     def si_publisher(self) -> None:
         """
@@ -320,6 +329,11 @@ class HL2SSROSBridge(Node):
                     si_data, "Right", data.timestamp
                 )
                 self.ros_hand_publisher.publish(hand_msg_right)
+
+            self._si_rate_tracker.tick()
+            self.get_logger().debug(f"Published hand pose message (hz: "
+                                    f"{self._si_rate_tracker.get_rate_avg()})",
+                                    throttle_duration_sec=1)
 
     def audio_publisher(self) -> None:
         """
@@ -349,6 +363,11 @@ class HL2SSROSBridge(Node):
             audio_msg.data = audio.tolist()
 
             self.ros_audio_publisher.publish(audio_msg)
+
+            self._audio_rate_tracker.tick()
+            self.get_logger().debug(f"Published audio message (hz: "
+                                    f"{self._audio_rate_tracker.get_rate_avg()})",
+                                    throttle_duration_sec=1)
 
     def create_hand_pose_msg_from_si_data(
         self,

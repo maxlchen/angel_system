@@ -13,6 +13,7 @@ from angel_msgs.msg import ObjectDetection2dSet
 from angel_system.fasterrcnn.faster_rcnn.resnet import resnet
 from angel_system.fasterrcnn.processing_utils import _get_image_blob
 from angel_utils.conversion import time_to_int
+from angel_utils import RateTracker
 
 
 BRIDGE = CvBridge()
@@ -22,6 +23,9 @@ class ObjectDetectorWithDescriptors(Node):
     """
     ROS node that subscribes to `Image` messages and publishes detections and
     descriptors for those images in the form of `ObjectDetectionSet2d` messages.
+
+    This original version is intended to support performing inference with the
+    pretrained model(s).
     """
 
     def __init__(self):
@@ -104,6 +108,9 @@ class ObjectDetectorWithDescriptors(Node):
                 self.classes.append(obj.split(',')[0].lower().strip())
 
         log.info("Ready to detect")
+        self.anchors = [4, 8, 16, 32]
+        self._detection_rate_tracker = RateTracker()
+
 
     def get_model(self) -> torch.nn.Module:
         """
@@ -112,7 +119,7 @@ class ObjectDetectorWithDescriptors(Node):
         """
         model = self._model
         if model is None:
-            model = resnet(self.classes, pretrained=False, class_agnostic=False)
+            model = resnet(self.classes, pretrained=False, class_agnostic=False, anchors=self.anchors, pool="align")
             model.create_architecture()
 
             checkpoint = torch.load(self._model_checkpoint)
@@ -131,7 +138,6 @@ class ObjectDetectorWithDescriptors(Node):
     def receive_min_time(self, msg: Time) -> None:
         """
         Set a minimum time for frame processing.
-
         If the given time is older than an already set minimum time, ignore
         this message.
         """
@@ -144,7 +150,6 @@ class ObjectDetectorWithDescriptors(Node):
         """
         Get the minimum time (in nanoseconds) that new images must be more
         recent than to be considered for processing.
-
         We should only process frames whose associated timestamp is greater
         than this (in nanoseconds).
         """
@@ -156,7 +161,6 @@ class ObjectDetectorWithDescriptors(Node):
         Callback function for the image subscriber. Performs image preprocessing,
         model inference, output postprocessing, and detection set publishing for
         each image received.
-
         This callback may return early if we receive an image that is before
         a received min processing time.
         """
@@ -221,6 +225,10 @@ class ObjectDetectorWithDescriptors(Node):
 
         # Publish detection set message
         self._publisher.publish(msg)
+        self._detection_rate_tracker.tick()
+        self.get_logger().debug(f"Published audio message (hz: "
+                                f"{self._detection_rate_tracker.get_rate_avg()})",
+                                throttle_duration_sec=1)
         log.info("Published detection set message")
 
     def preprocess_image(self, im_in):
@@ -228,7 +236,6 @@ class ObjectDetectorWithDescriptors(Node):
         Preprocess the image and return the necessary inputs for the fasterrcnn
         mode. Returns the image blob data, image info, ground truth boxes, image
         scales, and number of boxes.
-
         Based on:
         https://github.com/shilrley6/Faster-R-CNN-with-model-pretrained-on-Visual-Genome/blob/master/generate_tsv.py
         """
@@ -269,28 +276,43 @@ class ObjectDetectorWithDescriptors(Node):
         """
         Form the model outputs into a dictionary containing the bounding boxes,
         object indices, labels, features, and probability scores.
-
         Based on:
         https://github.com/shilrley6/Faster-R-CNN-with-model-pretrained-on-Visual-Genome/blob/master/generate_tsv.py
         """
         scores = cls_prob.data
         boxes = rois.data[:, :, 1:5]
 
-        boxes /= im_scales[0]
         # Simply repeat the boxes, once for each class
+        pred_boxes = np.tile(boxes.cpu(), (1, scores.cpu().shape[2]))
+        pred_boxes /= im_scales[0]
+
         scores = scores.squeeze()
-        max_conf = torch.zeros((scores.shape[0])).to(device=self._torch_device)
-        inds2 = torch.nonzero(scores >self._detection_threshold, as_tuple=True)
-        cls_scores = scores[inds2]
-        _, order = torch.sort(cls_scores, 0, True)
-        filled_boxs = boxes[:,inds2[0],:]
-        if filled_boxs.ndim == 1:
-            filled_boxs = torch.unsqueeze(filled_boxs, 0)
-        elif filled_boxs.ndim > 2:
-            filled_boxs = torch.squeeze(filled_boxs,0)
-        keep = nms(filled_boxs[order,:], cls_scores[order], 0.3)
-        index = inds2[0][order[keep]]
-        max_conf = torch.where(torch.max(scores[index,:]) > max_conf[index], torch.max(scores[index,:]), max_conf[index])
+        pred_boxes = pred_boxes.squeeze()
+
+        max_conf = torch.zeros((pred_boxes.shape[0])).to(device=self._torch_device)
+
+        for j in range(1, len(self.classes)):
+            inds = torch.nonzero(scores[:,j]>self._detection_threshold).view(-1).cpu()
+            # if there is det
+            if inds.numel() > 0:
+                cls_scores = scores[:,j][inds]
+                _, order = torch.sort(cls_scores, 0, True)
+                boxs_inds = pred_boxes[inds]
+                if boxs_inds.ndim == 1:
+                    boxs_inds = np.expand_dims(boxs_inds, 0)
+                cls_boxes = (
+                    torch.tensor(boxs_inds[:, j * 4:(j + 1) * 4])
+                    .to(device=self._torch_device)
+                )
+
+                keep = nms(cls_boxes[order, :], cls_scores[order], 0.3)
+                index = inds[order[keep]]
+                max_conf[index] = (
+                    torch.where(scores[index, j] > max_conf[index],
+                                scores[index, j],
+                                max_conf[index])
+                )
+
         keep_boxes = (
             torch.where(max_conf >= self._detection_threshold, max_conf, torch.tensor(0.0)
             .to(device=self._torch_device))
@@ -301,7 +323,7 @@ class ObjectDetectorWithDescriptors(Node):
                 objects = torch.argmax(scores[keep_boxes][1:])
                 objects = torch.unsqueeze(objects, 0)
                 box_dets = np.zeros((1, 4))
-                boxes = filled_boxes[keep_boxes]
+                boxes = pred_boxes[keep_boxes.cpu()]
                 kind = objects + 1
 
                 bbox = boxes[kind * 4: (kind + 1) * 4]
@@ -318,7 +340,11 @@ class ObjectDetectorWithDescriptors(Node):
             else:
                 objects = torch.argmax(scores[keep_boxes][:,1:], dim=1)
                 box_dets = np.zeros((len(keep_boxes), 4))
-                box_dets = filled_boxs[keep_boxes].cpu().numpy()
+                boxes = pred_boxes[keep_boxes.cpu()]
+                for i in range(len(keep_boxes)):
+                    kind = objects[i]+1
+                    bbox = boxes[i, kind * 4: (kind + 1) * 4]
+                    box_dets[i] = bbox
 
                 scores = scores[keep_boxes][:, 1:]
                 labels = []
@@ -336,7 +362,6 @@ class ObjectDetectorWithDescriptors(Node):
             )
         else:
             sample_info = dict(boxes=None, objects=None, feats=None, labels=None, scores=None)
-
         return sample_info
 
 
