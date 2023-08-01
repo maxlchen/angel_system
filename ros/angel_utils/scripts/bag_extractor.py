@@ -28,9 +28,15 @@ from angel_msgs.msg import (
     HeadsetPoseData,
     SpatialMesh,
     ActivityDetection,
+    TaskUpdate,
 )
 from sensor_msgs.msg import Image
 from angel_utils.conversion import convert_nv12_to_rgb
+
+from cv_bridge import CvBridge
+
+# Instantiate CvBridge
+bridge = CvBridge()
 
 
 def get_rosbag_options(path, serialization_format="cdr"):
@@ -103,6 +109,11 @@ class BagConverter(Node):
             .get_parameter_value()
             .bool_value
         )
+        self.extract_task_update_data = (
+            self.declare_parameter("extract_task_update_data", True)
+            .get_parameter_value()
+            .bool_value
+        )
         self.extract_depth_images = (
             self.declare_parameter("extract_depth_images", True)
             .get_parameter_value()
@@ -119,7 +130,7 @@ class BagConverter(Node):
             .string_value
         )
         self.pv_image_frame_id = (
-            self.declare_parameter("pv_image_frame_id", "PVFramesNV12")
+            self.declare_parameter("pv_image_frame_id", "PVFramesBGR")
             .get_parameter_value()
             .string_value
         )
@@ -155,6 +166,8 @@ class BagConverter(Node):
             self.msg_type_to_handler_map[
                 ActivityDetection
             ] = self.handle_activity_detection_msg
+        if self.extract_task_update_data:
+            self.msg_type_to_handler_map[TaskUpdate] = self.handle_task_update_msg
 
         # Top level data folder
         self.num_total_msgs = 0
@@ -199,6 +212,10 @@ class BagConverter(Node):
         # For activity detection data
         self.activity_detection_msgs = []
         self.num_activity_detection_msgs = 0
+
+        # For task update data
+        self.task_update_msgs = []
+        self.num_task_update_msgs = 0
 
         # For extracting depth images
         self.num_depth_image_msgs = 0
@@ -257,7 +274,10 @@ class BagConverter(Node):
         if self.extract_audio:
             self.create_wav_file()
             audio_stamp_file = self.data_folder + "audio_time_data.json"
-            stamps = {"start_time": self.min_audio_stamp, "end_time": self.max_audio_stamp}
+            stamps = {
+                "start_time": self.min_audio_stamp,
+                "end_time": self.max_audio_stamp,
+            }
             with open(audio_stamp_file, mode="w", encoding="utf-8") as f:
                 json.dump(stamps, f)
             self.log.info(f"Created audio timestamp file: {audio_stamp_file}")
@@ -313,6 +333,14 @@ class BagConverter(Node):
         else:
             self.log.info(f"Skipping activity detection file creation")
 
+        if self.extract_task_update_data:
+            task_update_file = self.data_folder + "task_update_data.json"
+            with open(task_update_file, mode="w", encoding="utf-8") as f:
+                json.dump(self.task_update_msgs, f)
+            self.log.info(f"Created task update file: {task_update_file}")
+        else:
+            self.log.info(f"Skipping task_update file creation")
+
         if self.extract_depth_head_pose_data:
             depth_head_pose_file = self.data_folder + "depth_head_pose_data.json"
             with open(depth_head_pose_file, mode="w", encoding="utf-8") as f:
@@ -337,6 +365,7 @@ class BagConverter(Node):
         self.log.info(
             f"Activity detection messages: {self.num_activity_detection_msgs}"
         )
+        self.log.info(f"Task update messages: {self.num_task_update_msgs}")
         self.log.info(f"Depth image messages: {self.num_depth_image_msgs}")
         self.log.info(f"Depth head pose messages: {self.num_depth_head_pose_msgs}")
 
@@ -485,12 +514,35 @@ class BagConverter(Node):
         }
         return d
 
+    def convert_task_update_msg_to_dict(self, msg) -> Dict:
+        """
+        Converts a TaskUpdate ROS message object to a dictionary.
+        """
+        d = {
+            "header": {
+                "time_sec": msg.header.stamp.sec,
+                "time_nanosec": msg.header.stamp.nanosec,
+                "frame_id": msg.header.frame_id,
+            },
+            "task_name": msg.task_name,
+            "task_description": msg.task_description,
+            "latest_sensor_input_time": msg.latest_sensor_input_time.sec
+            + (msg.latest_sensor_input_time.nanosec * 1e-9),
+            "current_step_id": msg.current_step_id,
+            "current_step": msg.current_step,
+            "previous_step": msg.previous_step,
+            "task_complete_confidence": msg.task_complete_confidence,
+            "completed_steps": list(msg.completed_steps),
+            "hmm_step_confidence": list(msg.hmm_step_confidence),
+        }
+        return d
+
     def handle_audio_msg(self, msg: HeadsetAudioData) -> None:
         """
         Handler for the audio messages in the ROS bag.
         Adds the audio data to the audio_data list.
         """
-        time = msg.header.stamp.sec + msg.header.stamp.nanosec * 10e-9,
+        time = (msg.header.stamp.sec + msg.header.stamp.nanosec * 10e-9,)
         if self.num_audio_msgs == 0:
             self.min_audio_stamp = time
             self.max_audio_stamp = time
@@ -509,11 +561,14 @@ class BagConverter(Node):
         Converts the PV images to RGB and saves them to disk.
         Converts the depth images to 16-bit grayscale and saves them to disk.
         """
-        if msg.encoding == "nv12" and self.extract_images:
+        if msg.encoding in ["nv12", "rgb8", "bgr8"] and self.extract_images:
             self.num_image_msgs += 1
 
-            # Convert NV12 image to RGB
-            rgb_image = convert_nv12_to_rgb(msg.data, msg.height, msg.width)
+            if msg.encoding == "nv12":
+                # Convert NV12 image to RGB
+                rgb_image = convert_nv12_to_rgb(msg.data, msg.height, msg.width)
+            else:
+                rgb_image = bridge.imgmsg_to_cv2(msg, msg.encoding)
 
             # Save image to disk
             timestamp_str = (
@@ -603,16 +658,27 @@ class BagConverter(Node):
         msg_dict = self.convert_annotation_event_msg_to_dict(msg)
         self.annotation_event_msgs.append(msg_dict)
 
-    def handle_activity_detection_msg(self, msg: SpatialMesh) -> None:
+    def handle_activity_detection_msg(self, msg: ActivityDetection) -> None:
         """
         Handler for the activity detection messages in the ROS bag.
-        Converts the spatial mesh data to a dictionary and then adds it to
-        the spatial mesh dictionary list.
+        Converts the ActivityDetection data to a dictionary and then adds it to
+        the ActivityDetection dictionary list.
         """
         self.num_activity_detection_msgs += 1
 
         msg_dict = self.convert_activity_detection_msg_to_dict(msg)
         self.activity_detection_msgs.append(msg_dict)
+
+    def handle_task_update_msg(self, msg: TaskUpdate):
+        """
+        Handler for the task update messages in the ROS bag.
+        Converts the TaskUpdate data to a dictionary and then adds it to
+        the TaskUpdate dictionary list.
+        """
+        self.num_task_update_msgs += 1
+
+        msg_dict = self.convert_task_update_msg_to_dict(msg)
+        self.task_update_msgs.append(msg_dict)
 
 
 if __name__ == "__main__":
