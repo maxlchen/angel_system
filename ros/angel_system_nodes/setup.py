@@ -22,7 +22,10 @@ setup(
             'console_scripts': [
                 'video_listener = angel_system_nodes.video_subscriber:main',
                 'asr = angel_system_nodes.asr:main',
+                'voice_activity_detector = angel_system_nodes.voice_activity_detector:main',
+                'emotion_detector = angel_system_nodes.emotion_detector:main', 
                 'intent_detector = angel_system_nodes.intent_detector:main',
+                'qa = angel_system_nodes.question_answerer:main',
                 'audio_player = angel_system_nodes.audio_player:main',
                 'frame_publisher = angel_system_nodes.ros_publisher:main',
                 'generate_images = angel_system_nodes.generate_images:main',

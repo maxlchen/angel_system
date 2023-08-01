@@ -1,29 +1,20 @@
-import json
-import time
-
-from cv_bridge import CvBridge
-import cv2
-import numpy as np
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Header
 
 from angel_msgs.msg import InterpretedAudioUserIntent, Utterance
 
 # Please refer to labels defined in
 # https://docs.google.com/document/d/1uuvSL5de3LVM9c0tKpRKYazDxckffRHf7IAcabSw9UA .
-NEXT_STEP_KEYPHRASES = ['skip', 'next step', 'next']
-PREV_STEP_KEYPHRASES = ['previous', 'prev step', 'last step', 'go back']
+NEXT_STEP_KEYPHRASES = ['skip', 'next', 'next step']
+PREV_STEP_KEYPHRASES = ['previous', 'previous step', 'last step', 'go back']
 OVERRIDE_KEYPHRASES = ['angel', 'angel system']
 
 # TODO(derekahmed): Please figure out how to keep this sync-ed with
 # config/angel_system_cmds/user_intent_to_sys_cmd_v1.yaml.
 LABELS = [
     "Go to next step",
-    "Go to previous step",
-    "Other"
+    "Go to previous step"
 ]
-
 
 UTTERANCES_TOPIC = "utterances_topic"
 PARAM_EXPECT_USER_INTENT_TOPIC = "expect_user_intent_topic"
@@ -32,7 +23,7 @@ PARAM_INTERP_USER_INTENT_TOPIC = "interp_user_intent_topic"
 class IntentDetector(Node):
     '''
     As of Q12023, intent detection is derived heuristically. This will be shifted
-    to a model-based approach in the neat-future.
+    to a model-based approach in the near-future.
     '''
 
     def __init__(self):
@@ -55,7 +46,7 @@ class IntentDetector(Node):
                 some_not_set = True
                 self.log.error(f"Parameter not set: {p.name}")
         if some_not_set:
-            raise ValueError("Some parameters are not set.")    
+            raise ValueError("Some parameters are not set.")
 
         self._utterances_topic = \
             self.get_parameter(UTTERANCES_TOPIC).value
@@ -79,52 +70,58 @@ class IntentDetector(Node):
             Utterance,
             self._utterances_topic,
             self.listener_callback,
-            10)
+            100)
         
         self._expected_publisher = self.create_publisher(
             InterpretedAudioUserIntent,
             self._expect_uintent_topic,
-            1
-        )
+            1)
 
         self._interp_publisher = self.create_publisher(
             InterpretedAudioUserIntent,
             self._interp_uintent_topic,
-            1
-        )
+            1)
 
     def listener_callback(self, msg):
-        log = self.get_logger()
         intent_msg = InterpretedAudioUserIntent()
         intent_msg.utterance_text = msg.value
 
-        lower_utterance = msg.value.lower()            
+        lower_utterance = msg.value.lower()
+        interp_intents = []
+        confidences =  []    
         if self.contains_phrase(lower_utterance, NEXT_STEP_KEYPHRASES):
-            intent_msg.user_intent = LABELS[0]
-            intent_msg.confidence = 0.5
-        elif self.contains_phrase(lower_utterance, PREV_STEP_KEYPHRASES):
-            intent_msg.user_intent = LABELS[1]
-            intent_msg.confidence = 0.5
-        else:
-            intent_msg.user_intent = LABELS[2]
-            intent_msg.confidence = 0.5
+            interp_intents.append(LABELS[0])
+            confidences.append(0.5)
+        if self.contains_phrase(lower_utterance, PREV_STEP_KEYPHRASES):
+            interp_intents.append(LABELS[1])
+            confidences.append(0.5)
+        if not interp_intents:
+            self.log.info(f"No intents detected for:\n\n\"{msg.value}\":")
             return
+
+        if len(interp_intents) > 1:
+            self.log.info(f"Detected multiple intents: \n{interp_intents}\n" +\
+                          f"Defaulting to the first one: \"{interp_intents[0]}\".")
         
+        intent_msg.user_intent = interp_intents[0]
+        intent_msg.confidence = confidences[0]
         if self.contains_phrase(lower_utterance, OVERRIDE_KEYPHRASES):
             intent_msg.confidence = 1.0
             self._expected_publisher.publish(intent_msg)
         else:
             self._interp_publisher.publish(intent_msg)
-        
-        log.info(f"Detected intents for \"{msg.value}\":\n" +
-            f"\"{intent_msg.user_intent}\": {intent_msg.confidence}")
+
+        self.log.info(f"Detected intents for\n\n\"{msg.value}\"\n\n" +
+            f"\"{self._red_font(intent_msg.user_intent)}\": {intent_msg.confidence}")
 
     def contains_phrase(self, utterance, phrases):
         for phrase in phrases:
             if phrase in utterance:
                 return True
         return False
-
+    
+    def _red_font(self, text):
+        return f"\033[91m{text}\033[0m"
 
 def main():
     rclpy.init()
